@@ -21,6 +21,15 @@ class PostCallExtractionService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    @staticmethod
+    def events_have_transcript_text(events: list[ConversationEvent]) -> bool:
+        for event in events:
+            if event.event_type != ConversationEventType.TRANSCRIPT:
+                continue
+            if str(event.payload.get("text", "")).strip():
+                return True
+        return False
+
     async def extract(self, events: list[ConversationEvent]) -> PostCallExtraction | None:
         if not self.settings.post_call_ai_extraction_enabled:
             return None

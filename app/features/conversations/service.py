@@ -7,12 +7,13 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import status
+from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.features.appointments.repository import AppointmentRepository
 from app.features.appointments.schemas import Appointment
-from app.features.conversations.ai_extraction import PostCallExtractionService
+from app.features.conversations.ai_extraction import PostCallExtraction, PostCallExtractionService
 from app.features.conversations.event_bus import ConversationEventBus, event_bus
 from app.features.conversations.repository import ConversationRepository
 from app.features.conversations.schemas import (
@@ -74,12 +75,26 @@ class ConversationService:
         return session
 
     async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> CallSession:
-        session = await self.repository.end_session(session_id, summary)
+        events = await self.repository.list_events(session_id)
+        final_summary: dict[str, object] = dict(summary or {})
+        if (
+            self.settings.post_call_ai_extraction_enabled
+            and PostCallExtractionService.events_have_transcript_text(events)
+        ):
+            ai = await self.ai_extraction_service.extract(events)
+            if ai is not None:
+                final_summary["ai_summary"] = ai.summary
+                final_summary["ai_outcome"] = ai.outcome
+                final_summary["ai_next_action"] = ai.next_action
+                final_summary["ai_provider"] = "anthropic_with_openrouter_fallback"
+                final_summary["ai_extracted_fields"] = ai.extracted_fields.model_dump(mode="json")
+
+        session = await self.repository.end_session(session_id, final_summary)
         await self.add_event(
             ConversationEventCreate(
                 session_id=session_id,
                 event_type=ConversationEventType.CALL_ENDED,
-                payload={"message": "Call ended", "summary": summary or {}},
+                payload={"message": "Call ended", "summary": final_summary},
             )
         )
         return session
@@ -119,7 +134,25 @@ class ConversationService:
         phone_number = session.phone_number
         appointments = await self.appointment_repository.list_by_phone(phone_number) if phone_number else []
         extracted_fields = self.extract_fields(session, events, appointments)
-        ai_extraction = await self.ai_extraction_service.extract(events)
+
+        summ = session.summary or {}
+        cached_summary_text = summ.get("ai_summary")
+        has_cached_ai = isinstance(cached_summary_text, str) and bool(cached_summary_text.strip())
+
+        if has_cached_ai:
+            try:
+                cached_extracted = ExtractedConversationFields.model_validate(summ.get("ai_extracted_fields") or {})
+            except ValidationError:
+                cached_extracted = ExtractedConversationFields()
+            ai_extraction = PostCallExtraction(
+                extracted_fields=cached_extracted,
+                summary=cached_summary_text if isinstance(cached_summary_text, str) else None,
+                outcome=summ.get("ai_outcome") if isinstance(summ.get("ai_outcome"), str) else None,
+                next_action=summ.get("ai_next_action") if isinstance(summ.get("ai_next_action"), str) else None,
+            )
+        else:
+            ai_extraction = await self.ai_extraction_service.extract(events)
+
         if ai_extraction is not None:
             extracted_fields = self._merge_extracted_fields(extracted_fields, ai_extraction.extracted_fields)
             session = session.model_copy(
