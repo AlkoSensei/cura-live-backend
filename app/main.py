@@ -61,6 +61,25 @@ def create_app() -> FastAPI:
 
     @fastapi_app.get("/api/warmup")
     async def warmup() -> dict[str, object]:
+        cfg = get_settings()
+        if not cfg.start_embedded_livekit_worker:
+            supabase_ready = False
+            try:
+                from app.db.supabase import get_supabase
+                client = get_supabase()
+                await client.table("call_sessions").select("id").limit(1).execute()
+                supabase_ready = True
+            except Exception:
+                pass
+            status = "ready" if supabase_ready else "warming"
+            return {
+                "status": status,
+                "checks": {
+                    "worker": "external",
+                    "supabase": "ready" if supabase_ready else "warming",
+                },
+            }
+
         from app.agent.worker import server
 
         connecting: bool = getattr(server, "_connecting", False)

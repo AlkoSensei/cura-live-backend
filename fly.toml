@@ -1,0 +1,19 @@
+# LiveKit worker only (no HTTP). Full steps: docs/fly-livekit-worker.md
+# GitHub Actions: .github/workflows/fly-livekit-worker.yml (secret FLY_API_TOKEN)
+
+app = "kare-live-livekit-worker"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  START_EMBEDDED_LIVEKIT_WORKER = "false"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[restart]]
+  policy = "always"
