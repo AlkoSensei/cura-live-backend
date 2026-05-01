@@ -53,6 +53,6 @@ Use this when you want the **worker** on Fly and the **HTTP API** elsewhere (e.g
 
 ## Notes
 
-- `Dockerfile.worker` runs `python -m app.agent.run_worker`; image uses Python 3.11 to match `Dockerfile`.
+- `Dockerfile.worker` runs `python -m app.agent.run_worker start` (LiveKit’s CLI requires the `start` subcommand); image uses Python 3.11 to match `Dockerfile`.
 - Primary region is `sin` in `fly.toml`; change `primary_region` if needed.
 - If `render.yaml` still defines `kare-live-livekit-worker` **Render background worker**, delete or disable that service before relying on Fly, or you will register **two** workers.

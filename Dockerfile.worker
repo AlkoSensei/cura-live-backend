@@ -12,4 +12,4 @@ COPY . .
 
 ENV START_EMBEDDED_LIVEKIT_WORKER=false
 
-CMD ["python", "-m", "app.agent.run_worker"]
+CMD ["python", "-m", "app.agent.run_worker", "start"]

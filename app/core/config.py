@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     post_call_ai_extraction_enabled: bool = True
 
     # Deployment: when true, start the LiveKit worker inside the FastAPI process (simple local dev).
-    # On Render/Fly web: set START_EMBEDDED_LIVEKIT_WORKER=false and run `python -m app.agent.run_worker` separately.
+    # On Render/Fly web: set START_EMBEDDED_LIVEKIT_WORKER=false and run `python -m app.agent.run_worker start` separately.
     start_embedded_livekit_worker: bool = True
 
     cost_stt_per_minute: float = 0.0

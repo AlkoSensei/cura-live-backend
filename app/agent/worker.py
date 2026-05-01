@@ -310,4 +310,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) == 1:
+        sys.argv.append("start")
     cli.run_app(server)

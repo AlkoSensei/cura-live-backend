@@ -79,7 +79,7 @@ services:
     region: singapore
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.agent.run_worker
+    startCommand: python -m app.agent.run_worker start
     plan: starter
 
     envVars:
