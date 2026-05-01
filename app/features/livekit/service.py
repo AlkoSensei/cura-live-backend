@@ -19,13 +19,21 @@ from app.features.livekit.schemas import (
 
 
 class LiveKitService:
-    def __init__(self, conversation_service: ConversationService, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        conversation_service: ConversationService,
+        settings: Settings | None = None,
+    ) -> None:
         self.conversation_service = conversation_service
         self.settings = settings or get_settings()
 
-    async def create_session(self, payload: CreateLiveKitSessionRequest) -> CreateLiveKitSessionResponse:
+    async def create_session(
+        self, payload: CreateLiveKitSessionRequest
+    ) -> CreateLiveKitSessionResponse:
         if not self.settings.livekit_configured:
-            raise AppError("LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.")
+            raise AppError(
+                "LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET."
+            )
 
         room_name = payload.room_name or f"kare-web-{uuid4().hex[:12]}"
         session = await self.conversation_service.create_session(
@@ -47,7 +55,10 @@ class LiveKitService:
             ConversationEventCreate(
                 session_id=session.id,
                 event_type=ConversationEventType.TOOL_COMPLETED,
-                payload={"message": "Agent dispatch created", "agent_name": self.settings.livekit_agent_name},
+                payload={
+                    "message": "Agent dispatch created",
+                    "agent_name": self.settings.livekit_agent_name,
+                },
             )
         )
         avatar_enabled = self.settings.livekit_avatar_bey_enabled
@@ -59,11 +70,15 @@ class LiveKitService:
             avatar_enabled=avatar_enabled,
             avatar_provider="bey" if avatar_enabled else None,
             avatar_participant_identity=(
-                self.settings.livekit_avatar_participant_identity if avatar_enabled else None
+                self.settings.livekit_avatar_participant_identity
+                if avatar_enabled
+                else None
             ),
         )
 
-    async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> EndLiveKitSessionResponse:
+    async def end_session(
+        self, session_id: UUID, summary: dict[str, object] | None = None
+    ) -> EndLiveKitSessionResponse:
         session = await self.conversation_service.get_session(session_id)
         await self._delete_room(session.room_name)
         ended_session = await self.conversation_service.end_session(session_id, summary)
@@ -84,7 +99,11 @@ class LiveKitService:
         )
 
     async def _create_room(self, room_name: str, session_id: UUID) -> None:
-        lkapi = api.LiveKitAPI(self.settings.livekit_url, self.settings.livekit_api_key, self.settings.livekit_api_secret)
+        lkapi = api.LiveKitAPI(
+            self.settings.livekit_url,
+            self.settings.livekit_api_key,
+            self.settings.livekit_api_secret,
+        )
         try:
             await lkapi.room.create_room(
                 api.CreateRoomRequest(
@@ -101,7 +120,11 @@ class LiveKitService:
             await lkapi.aclose()
 
     async def _dispatch_agent(self, room_name: str, session_id: UUID) -> None:
-        lkapi = api.LiveKitAPI(self.settings.livekit_url, self.settings.livekit_api_key, self.settings.livekit_api_secret)
+        lkapi = api.LiveKitAPI(
+            self.settings.livekit_url,
+            self.settings.livekit_api_key,
+            self.settings.livekit_api_secret,
+        )
         try:
             await lkapi.agent_dispatch.create_dispatch(
                 api.CreateAgentDispatchRequest(
@@ -114,7 +137,11 @@ class LiveKitService:
             await lkapi.aclose()
 
     async def _delete_room(self, room_name: str) -> None:
-        lkapi = api.LiveKitAPI(self.settings.livekit_url, self.settings.livekit_api_key, self.settings.livekit_api_secret)
+        lkapi = api.LiveKitAPI(
+            self.settings.livekit_url,
+            self.settings.livekit_api_key,
+            self.settings.livekit_api_secret,
+        )
         try:
             await lkapi.room.delete_room(api.DeleteRoomRequest(room=room_name))
         except Exception:
@@ -131,7 +158,9 @@ class LiveKitService:
     ) -> str:
         metadata = self._room_metadata(session_id)
         return (
-            api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
+            api.AccessToken(
+                self.settings.livekit_api_key, self.settings.livekit_api_secret
+            )
             .with_identity(participant_identity)
             .with_name(participant_name or participant_identity)
             .with_metadata(metadata)
