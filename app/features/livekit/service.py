@@ -61,14 +61,20 @@ class LiveKitService:
                 },
             )
         )
-        avatar_enabled = self.settings.livekit_avatar_bey_enabled
+        avatar_enabled = self.settings.livekit_avatar_enabled
+        avatar_provider: str | None = None
+        if avatar_enabled:
+            if self.settings.livekit_avatar_bey_enabled:
+                avatar_provider = "bey"
+            elif self.settings.livekit_avatar_tavus_enabled:
+                avatar_provider = "tavus"
         return CreateLiveKitSessionResponse(
             session=session,
             room_name=room_name,
             livekit_url=self.settings.livekit_url,
             token=token,
             avatar_enabled=avatar_enabled,
-            avatar_provider="bey" if avatar_enabled else None,
+            avatar_provider=avatar_provider,
             avatar_participant_identity=(
                 self.settings.livekit_avatar_participant_identity
                 if avatar_enabled

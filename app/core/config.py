@@ -15,13 +15,17 @@ class Settings(BaseSettings):
     livekit_api_secret: str = ""
     livekit_agent_name: str = "kare-appointment-agent"
     livekit_max_call_seconds: int = 300
-    # Virtual avatar (Beyond Presence). Set LIVEKIT_AVATAR_PROVIDER=bey and BEY_API_KEY to enable.
+    # Virtual avatar: LIVEKIT_AVATAR_PROVIDER none | bey | tavus
     livekit_avatar_provider: str = "none"
     livekit_avatar_participant_identity: str = "kare-avatar-agent"
     livekit_avatar_participant_name: str = "Kare Avatar"
 
     bey_api_key: str = ""
     bey_avatar_id: str = ""
+
+    tavus_api_key: str = ""
+    tavus_replica_id: str = ""
+    tavus_persona_id: str = ""
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""
@@ -43,6 +47,12 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-3-flash"
     post_call_ai_extraction_enabled: bool = True
 
+    # Deployment: when true, start the LiveKit worker inside the FastAPI process.
+    # For best latency/reliability, run the worker as a separate service and set this to false in the web service.
+    start_embedded_livekit_worker: bool = Field(
+        default=False, validation_alias="START_EMBEDDED_LIVEKIT_WORKER"
+    )
+
     cost_stt_per_minute: float = 0.0
     cost_tts_per_1k_chars: float = 0.0
     cost_llm_input_per_1m_tokens: float = 0.80
@@ -56,11 +66,32 @@ class Settings(BaseSettings):
 
     @property
     def livekit_configured(self) -> bool:
-        return bool(self.livekit_url and self.livekit_api_key and self.livekit_api_secret)
+        return bool(
+            self.livekit_url and self.livekit_api_key and self.livekit_api_secret
+        )
+
+    @property
+    def livekit_avatar_provider_normalized(self) -> str:
+        return self.livekit_avatar_provider.strip().lower()
 
     @property
     def livekit_avatar_bey_enabled(self) -> bool:
-        return self.livekit_avatar_provider.strip().lower() == "bey" and bool(self.bey_api_key.strip())
+        return self.livekit_avatar_provider_normalized == "bey" and bool(
+            self.bey_api_key.strip()
+        )
+
+    @property
+    def livekit_avatar_tavus_enabled(self) -> bool:
+        return (
+            self.livekit_avatar_provider_normalized == "tavus"
+            and bool(self.tavus_api_key.strip())
+            and bool(self.tavus_replica_id.strip())
+            and bool(self.tavus_persona_id.strip())
+        )
+
+    @property
+    def livekit_avatar_enabled(self) -> bool:
+        return self.livekit_avatar_bey_enabled or self.livekit_avatar_tavus_enabled
 
     @property
     def supabase_configured(self) -> bool:

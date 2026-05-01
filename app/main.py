@@ -16,19 +16,27 @@ from app.features.livekit.router import router as livekit_router
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    from app.agent.worker import server
-
+    settings = get_settings()
     await init_supabase()
-    worker_task = asyncio.create_task(server.run(), name="livekit-worker")
+
+    worker_task: asyncio.Task[None] | None = None
+    server = None
+    if settings.start_embedded_livekit_worker:
+        from app.agent.worker import server as _server
+
+        server = _server
+        worker_task = asyncio.create_task(server.run(), name="livekit-worker")
     try:
         yield
     finally:
-        await server.aclose()
-        worker_task.cancel()
-        try:
-            await worker_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        if server is not None:
+            await server.aclose()
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except (asyncio.CancelledError, Exception):
+                pass
         await close_supabase()
 
 

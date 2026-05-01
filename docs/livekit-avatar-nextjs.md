@@ -4,9 +4,23 @@ Backend API prefix is **`/api`** (see `api_prefix` in settings). All paths below
 
 ---
 
-## LiveKit + Beyond Presence avatar
+## LiveKit virtual avatar
 
-When the backend has `LIVEKIT_AVATAR_PROVIDER=bey` and `BEY_API_KEY` set, the Python worker joins a Beyond Presence avatar participant and routes synthesized speech to it. The HTTP session response tells the UI whether to render that participant.
+The backend can attach a LiveKit-native avatar using **Beyond Presence** or **Tavus**. Both publish the same participant identity by default (`kare-avatar-agent`), so the frontend only needs `avatar_enabled` and `avatar_participant_identity`.
+
+### Beyond Presence
+
+When `LIVEKIT_AVATAR_PROVIDER=bey` and `BEY_API_KEY` are set, the worker joins a Beyond Presence avatar and routes TTS audio into it.
+
+### Tavus
+
+When `LIVEKIT_AVATAR_PROVIDER=tavus` and these are set:
+
+- `TAVUS_API_KEY`
+- `TAVUS_REPLICA_ID`
+- `TAVUS_PERSONA_ID`
+
+the worker uses Tavus `AvatarSession`. Create a Tavus **persona** with LiveKit transport and **echo** pipeline (see Tavus LiveKit integration docs) before enabling.
 
 ### `POST /livekit/sessions`
 
@@ -14,8 +28,8 @@ Response fields:
 
 | Field | Meaning |
 |-------|---------|
-| `avatar_enabled` | `true` when Beyond Presence avatar is active |
-| `avatar_provider` | `"bey"` or `null` |
+| `avatar_enabled` | `true` when an avatar plugin is active |
+| `avatar_provider` | `"bey"`, `"tavus"`, or `null` |
 | `avatar_participant_identity` | Subscribe/render the remote participant with this **identity** (defaults to `kare-avatar-agent` unless overridden via env) |
 
 Connect with `livekit_url`, `token`, and `room_name` as before.

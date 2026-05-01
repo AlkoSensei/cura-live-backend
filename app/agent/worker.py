@@ -24,6 +24,8 @@ settings = get_settings()
 os.environ.setdefault("LIVEKIT_URL", settings.livekit_url)
 os.environ.setdefault("LIVEKIT_API_KEY", settings.livekit_api_key)
 os.environ.setdefault("LIVEKIT_API_SECRET", settings.livekit_api_secret)
+if settings.tavus_api_key.strip():
+    os.environ.setdefault("TAVUS_API_KEY", settings.tavus_api_key.strip())
 server = AgentServer()
 
 
@@ -110,9 +112,16 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     session_id = _parse_session_id(ctx)
 
-    avatar_provider = settings.livekit_avatar_provider.strip().lower()
-    if avatar_provider == "bey" and not settings.bey_api_key.strip():
+    prov = settings.livekit_avatar_provider_normalized
+    if prov == "bey" and not settings.bey_api_key.strip():
         raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=bey requires BEY_API_KEY.")
+    if prov == "tavus":
+        if not settings.tavus_api_key.strip():
+            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_API_KEY.")
+        if not settings.tavus_replica_id.strip():
+            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_REPLICA_ID.")
+        if not settings.tavus_persona_id.strip():
+            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_PERSONA_ID.")
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -225,8 +234,8 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
 
-    avatar_enabled = settings.livekit_avatar_bey_enabled
-    if avatar_enabled:
+    avatar_enabled = settings.livekit_avatar_enabled
+    if settings.livekit_avatar_bey_enabled:
         from livekit.plugins import bey
 
         bey_kwargs: dict[str, object] = {
@@ -238,6 +247,17 @@ async def entrypoint(ctx: JobContext) -> None:
             bey_kwargs["avatar_id"] = settings.bey_avatar_id.strip()
         bey_avatar = bey.AvatarSession(**bey_kwargs)
         await bey_avatar.start(session, room=ctx.room)
+    elif settings.livekit_avatar_tavus_enabled:
+        from livekit.plugins import tavus
+
+        tavus_avatar = tavus.AvatarSession(
+            replica_id=settings.tavus_replica_id.strip(),
+            persona_id=settings.tavus_persona_id.strip(),
+            api_key=settings.tavus_api_key.strip(),
+            avatar_participant_identity=settings.livekit_avatar_participant_identity,
+            avatar_participant_name=settings.livekit_avatar_participant_name,
+        )
+        await tavus_avatar.start(session, room=ctx.room)
 
     start_kwargs: dict[str, object] = {
         "agent": AppointmentAgent(
