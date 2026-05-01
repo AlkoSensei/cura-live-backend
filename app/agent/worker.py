@@ -29,7 +29,7 @@ if settings.tavus_api_key.strip():
 server = AgentServer()
 
 
-def _parse_session_id(ctx: JobContext) -> UUID:
+def _parse_dispatch_metadata(ctx: JobContext) -> dict[str, object]:
     metadata_candidates = [
         getattr(getattr(ctx, "job", None), "metadata", None),
         getattr(getattr(ctx, "room", None), "metadata", None),
@@ -41,8 +41,8 @@ def _parse_session_id(ctx: JobContext) -> UUID:
             parsed = json.loads(metadata)
         except json.JSONDecodeError:
             continue
-        if session_id := parsed.get("session_id"):
-            return UUID(session_id)
+        if parsed.get("session_id"):
+            return parsed
     raise RuntimeError("LiveKit dispatch metadata did not include session_id.")
 
 
@@ -110,18 +110,19 @@ async def entrypoint(ctx: JobContext) -> None:
         repository=SupabaseConversationRepository(client),
         appointment_repository=SupabaseAppointmentRepository(client),
     )
-    session_id = _parse_session_id(ctx)
+    meta = _parse_dispatch_metadata(ctx)
+    session_id = UUID(str(meta["session_id"]))
+    prov = str(meta.get("avatar_provider") or settings.livekit_avatar_provider_normalized).strip().lower()
 
-    prov = settings.livekit_avatar_provider_normalized
     if prov == "bey" and not settings.bey_api_key.strip():
-        raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=bey requires BEY_API_KEY.")
+        raise RuntimeError("Avatar provider bey requires BEY_API_KEY.")
     if prov == "tavus":
         if not settings.tavus_api_key.strip():
-            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_API_KEY.")
+            raise RuntimeError("Avatar provider tavus requires TAVUS_API_KEY.")
         if not settings.tavus_replica_id.strip():
-            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_REPLICA_ID.")
+            raise RuntimeError("Avatar provider tavus requires TAVUS_REPLICA_ID.")
         if not settings.tavus_persona_id.strip():
-            raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=tavus requires TAVUS_PERSONA_ID.")
+            raise RuntimeError("Avatar provider tavus requires TAVUS_PERSONA_ID.")
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -234,8 +235,15 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
 
-    avatar_enabled = settings.livekit_avatar_enabled
-    if settings.livekit_avatar_bey_enabled:
+    use_bey = prov == "bey" and bool(settings.bey_api_key.strip())
+    use_tavus = prov == "tavus" and bool(
+        settings.tavus_api_key.strip()
+        and settings.tavus_replica_id.strip()
+        and settings.tavus_persona_id.strip()
+    )
+    avatar_enabled = use_bey or use_tavus
+
+    if use_bey:
         from livekit.plugins import bey
 
         bey_kwargs: dict[str, object] = {
@@ -247,7 +255,7 @@ async def entrypoint(ctx: JobContext) -> None:
             bey_kwargs["avatar_id"] = settings.bey_avatar_id.strip()
         bey_avatar = bey.AvatarSession(**bey_kwargs)
         await bey_avatar.start(session, room=ctx.room)
-    elif settings.livekit_avatar_tavus_enabled:
+    elif use_tavus:
         from livekit.plugins import tavus
 
         tavus_avatar = tavus.AvatarSession(

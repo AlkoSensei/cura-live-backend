@@ -11,5 +11,3 @@ livekit-plugins-openai
 livekit-plugins-bey
 livekit-plugins-tavus
 httpx
-pytest
-pytest-asyncio

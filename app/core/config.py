@@ -52,10 +52,17 @@ class Settings(BaseSettings):
     # Local: set START_EMBEDDED_LIVEKIT_WORKER=true in .env (see .env.example).
     start_embedded_livekit_worker: bool = False
 
-    cost_stt_per_minute: float = 0.0
-    cost_tts_per_1k_chars: float = 0.0
+    # Approximate vendor rates (USD); override via env to match your billing page.
+    # Deepgram Nova streaming ~$0.0043/min (order of magnitude — verify at deepgram.com/pricing).
+    cost_stt_per_minute: float = 0.0043
+    # Sarvam / similar TTS: rough placeholder per 1k chars — verify at vendor pricing.
+    cost_tts_per_1k_chars: float = 0.03
     cost_llm_input_per_1m_tokens: float = 0.80
     cost_llm_output_per_1m_tokens: float = 4.00
+    # When usage_metrics lack STT/TTS meters, estimate from call wall-clock duration (seconds).
+    cost_fallback_use_call_duration: bool = True
+    cost_fallback_stt_ratio_of_call_duration: float = 1.0
+    cost_fallback_tts_chars_per_call_second: float = 5.4
 
     model_config = SettingsConfigDict(
         env_file=".env",

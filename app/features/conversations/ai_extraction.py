@@ -143,6 +143,7 @@ class PostCallExtractionService:
         return (
             "You extract post-call appointment analytics from a healthcare receptionist voice call. "
             "Use the transcript and tool events only. Do not invent missing values. "
-            "For extracted_fields, return name, phone_number, date, time, and intent as strings or null. "
-            "Use ISO date format when possible and HH:MM:SS time format when possible. Return JSON only."
+            "For extracted_fields return name, phone_number, intent as strings or null. "
+            "Always set date and time to null — the API fills report timestamps separately. "
+            "Return JSON only."
         )

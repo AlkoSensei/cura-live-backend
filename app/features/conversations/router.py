@@ -31,9 +31,10 @@ async def get_analytics(
 async def get_call_history(
     service: Annotated[ConversationService, Depends(get_conversation_service)],
     phone_number: str | None = None,
-    limit: int = 25,
+    page: int = 1,
+    page_size: int = 25,
 ) -> CallHistoryResponse:
-    return await service.get_history(phone_number=phone_number, limit=limit)
+    return await service.get_history(phone_number=phone_number, page=page, page_size=page_size)
 
 
 @router.get("/calls/{session_id}/cost", response_model=CallCost)

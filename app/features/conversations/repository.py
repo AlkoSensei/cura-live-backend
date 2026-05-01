@@ -10,6 +10,7 @@ from app.features.conversations.schemas import (
     CallStatus,
     ConversationEvent,
     ConversationEventCreate,
+    ConversationEventType,
 )
 
 
@@ -19,6 +20,18 @@ class ConversationRepository(Protocol):
     async def get_session(self, session_id: UUID) -> CallSession | None: ...
 
     async def list_sessions(self, phone_number: str | None, limit: int) -> list[CallSession]: ...
+
+    async def count_sessions(self, phone_number: str | None) -> int: ...
+
+    async def list_sessions_page(
+        self, phone_number: str | None, offset: int, limit: int
+    ) -> list[CallSession]: ...
+
+    async def list_session_ids_ordered(self, phone_number: str | None) -> list[UUID]: ...
+
+    async def list_sessions_by_ids(self, session_ids: list[UUID]) -> dict[UUID, CallSession]: ...
+
+    async def list_usage_events_for_sessions(self, session_ids: list[UUID]) -> list[ConversationEvent]: ...
 
     async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> CallSession: ...
 
@@ -53,11 +66,73 @@ class SupabaseConversationRepository:
         return CallSession.model_validate(response.data[0]) if response.data else None
 
     async def list_sessions(self, phone_number: str | None, limit: int) -> list[CallSession]:
-        query = self.client.table("call_sessions").select("*").order("created_at", desc=True).limit(limit)
+        return await self.list_sessions_page(phone_number, 0, limit)
+
+    async def count_sessions(self, phone_number: str | None) -> int:
+        query = self.client.table("call_sessions").select("id", count="exact")
         if phone_number:
             query = query.eq("phone_number", phone_number)
         response = await query.execute()
+        return int(response.count or 0)
+
+    async def list_sessions_page(
+        self, phone_number: str | None, offset: int, limit: int
+    ) -> list[CallSession]:
+        query = self.client.table("call_sessions").select("*").order("created_at", desc=True)
+        if phone_number:
+            query = query.eq("phone_number", phone_number)
+        response = await query.range(offset, offset + max(limit, 1) - 1).execute()
         return [CallSession.model_validate(row) for row in response.data]
+
+    async def list_session_ids_ordered(self, phone_number: str | None) -> list[UUID]:
+        batch = 500
+        start = 0
+        ids: list[UUID] = []
+        while True:
+            query = self.client.table("call_sessions").select("id").order("created_at", desc=True)
+            if phone_number:
+                query = query.eq("phone_number", phone_number)
+            response = await query.range(start, start + batch - 1).execute()
+            rows = response.data or []
+            if not rows:
+                break
+            ids.extend(UUID(str(row["id"])) for row in rows)
+            if len(rows) < batch:
+                break
+            start += batch
+        return ids
+
+    async def list_sessions_by_ids(self, session_ids: list[UUID]) -> dict[UUID, CallSession]:
+        if not session_ids:
+            return {}
+        out: dict[UUID, CallSession] = {}
+        chunk_size = 80
+        for i in range(0, len(session_ids), chunk_size):
+            chunk = session_ids[i : i + chunk_size]
+            response = await (
+                self.client.table("call_sessions").select("*").in_("id", [str(x) for x in chunk]).execute()
+            )
+            for row in response.data or []:
+                session = CallSession.model_validate(row)
+                out[session.id] = session
+        return out
+
+    async def list_usage_events_for_sessions(self, session_ids: list[UUID]) -> list[ConversationEvent]:
+        if not session_ids:
+            return []
+        events: list[ConversationEvent] = []
+        chunk_size = 80
+        for i in range(0, len(session_ids), chunk_size):
+            chunk = session_ids[i : i + chunk_size]
+            response = await (
+                self.client.table("conversation_events")
+                .select("*")
+                .eq("event_type", ConversationEventType.USAGE_METRICS.value)
+                .in_("session_id", [str(x) for x in chunk])
+                .execute()
+            )
+            events.extend(ConversationEvent.model_validate(row) for row in (response.data or []))
+        return events
 
     async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> CallSession:
         response = await (
@@ -128,10 +203,40 @@ class InMemoryConversationRepository:
         return self.sessions.get(session_id)
 
     async def list_sessions(self, phone_number: str | None, limit: int) -> list[CallSession]:
+        return await self.list_sessions_page(phone_number, 0, limit)
+
+    async def count_sessions(self, phone_number: str | None) -> int:
         sessions = list(self.sessions.values())
         if phone_number:
             sessions = [session for session in sessions if session.phone_number == phone_number]
-        return sorted(sessions, key=lambda session: session.created_at or datetime.min, reverse=True)[:limit]
+        return len(sessions)
+
+    async def list_sessions_page(
+        self, phone_number: str | None, offset: int, limit: int
+    ) -> list[CallSession]:
+        sessions = list(self.sessions.values())
+        if phone_number:
+            sessions = [session for session in sessions if session.phone_number == phone_number]
+        ordered = sorted(sessions, key=lambda session: session.created_at or datetime.min, reverse=True)
+        return ordered[offset : offset + limit]
+
+    async def list_session_ids_ordered(self, phone_number: str | None) -> list[UUID]:
+        sessions = list(self.sessions.values())
+        if phone_number:
+            sessions = [s for s in sessions if s.phone_number == phone_number]
+        ordered = sorted(sessions, key=lambda s: s.created_at or datetime.min, reverse=True)
+        return [s.id for s in ordered]
+
+    async def list_sessions_by_ids(self, session_ids: list[UUID]) -> dict[UUID, CallSession]:
+        return {sid: self.sessions[sid] for sid in session_ids if sid in self.sessions}
+
+    async def list_usage_events_for_sessions(self, session_ids: list[UUID]) -> list[ConversationEvent]:
+        out: list[ConversationEvent] = []
+        for sid in session_ids:
+            for event in self.events.get(sid, []):
+                if event.event_type == ConversationEventType.USAGE_METRICS:
+                    out.append(event)
+        return out
 
     async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> CallSession:
         session = self.sessions[session_id].model_copy(

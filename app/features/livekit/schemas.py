@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -9,6 +10,8 @@ class CreateLiveKitSessionRequest(BaseModel):
     participant_identity: str = Field(min_length=1, max_length=120)
     participant_name: str | None = Field(default=None, max_length=120)
     room_name: str | None = Field(default=None, max_length=120)
+    # Omit to use LIVEKIT_AVATAR_PROVIDER from env. Per-session: bey | tavus | none (requires matching API keys).
+    avatar_provider: Literal["none", "bey", "tavus"] | None = None
 
 
 class CreateLiveKitSessionResponse(BaseModel):

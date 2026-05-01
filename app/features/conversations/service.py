@@ -1,7 +1,10 @@
 import asyncio
 import json
+from collections import defaultdict
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import status
 
@@ -130,33 +133,77 @@ class ConversationService:
                     }
                 }
             )
+        extracted_fields = self._overlay_call_datetime_ist(session, extracted_fields, include_generated_iso=True)
+
         return CallAnalytics(
             session=session,
             events=events,
             appointments=appointments,
-            cost=self.calculate_cost(session_id, events),
+            cost=self.calculate_cost(session_id, events, session),
             extracted_fields=extracted_fields,
         )
 
-    async def get_history(self, phone_number: str | None = None, limit: int = 25) -> CallHistoryResponse:
-        sessions = await self.repository.list_sessions(phone_number, min(limit, 100))
+    async def get_history(
+        self,
+        phone_number: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> CallHistoryResponse:
+        page = max(1, page)
+        page_size = min(max(1, page_size), 100)
+        offset = (page - 1) * page_size
+
+        total_calls = await self.repository.count_sessions(phone_number)
+        sessions_page = await self.repository.list_sessions_page(phone_number, offset, page_size)
+
+        ids_all = await self.repository.list_session_ids_ordered(phone_number)
+        sessions_by_id = await self.repository.list_sessions_by_ids(ids_all)
+        usage_all = await self.repository.list_usage_events_for_sessions(ids_all)
+
+        usage_by_session: dict[UUID, list[ConversationEvent]] = defaultdict(list)
+        for ev in usage_all:
+            usage_by_session[ev.session_id].append(ev)
+
+        cost_by_session: dict[UUID, CallCost] = {}
+        total_cost_usd = 0.0
+        for sid in ids_all:
+            sess = sessions_by_id.get(sid)
+            cost = self.calculate_cost(sid, usage_by_session[sid], sess)
+            cost_by_session[sid] = cost
+            total_cost_usd += cost.total_cost
+
         calls: list[CallHistoryItem] = []
-        for session in sessions:
+        for session in sessions_page:
             events = await self.repository.list_events(session.id)
             tool_call_count = self.count_agent_tool_calls(events)
             appointments: list[Appointment] = []
             if session.phone_number:
                 appointments = await self.appointment_repository.list_by_phone(session.phone_number)
+            cost = cost_by_session[session.id]
+            raw_extracted = self.extract_fields(session, events, appointments)
             calls.append(
                 CallHistoryItem(
                     session=session,
                     tool_call_count=tool_call_count,
                     appointment_count=len(appointments),
-                    total_cost=self.calculate_cost(session.id, events).total_cost,
-                    extracted_fields=self.extract_fields(session, events, appointments),
+                    total_cost=cost.total_cost,
+                    cost=cost,
+                    extracted_fields=self._overlay_call_datetime_ist(
+                        session, raw_extracted, include_generated_iso=False
+                    ),
                 )
             )
-        return CallHistoryResponse(calls=calls)
+
+        has_next = offset + len(sessions_page) < total_calls
+
+        return CallHistoryResponse(
+            calls=calls,
+            page=page,
+            page_size=page_size,
+            total_calls=total_calls,
+            total_cost_usd=round(total_cost_usd, 6),
+            has_next=has_next,
+        )
 
     def count_agent_tool_calls(self, events: list[ConversationEvent]) -> int:
         return sum(
@@ -167,11 +214,32 @@ class ConversationService:
         )
 
     async def get_cost(self, session_id: UUID) -> CallCost:
-        await self.get_session(session_id)
+        session = await self.get_session(session_id)
         events = await self.repository.list_events(session_id)
-        return self.calculate_cost(session_id, events)
+        return self.calculate_cost(session_id, events, session)
 
-    def calculate_cost(self, session_id: UUID, events: list[ConversationEvent]) -> CallCost:
+    @staticmethod
+    def _call_duration_seconds(session: CallSession | None) -> float | None:
+        if session is None:
+            return None
+        start = session.started_at
+        end = session.ended_at
+        if start is None:
+            return None
+        if end is None:
+            end = datetime.now(UTC)
+        try:
+            delta = end - start
+        except TypeError:
+            return None
+        return max(0.0, delta.total_seconds())
+
+    def calculate_cost(
+        self,
+        session_id: UUID,
+        events: list[ConversationEvent],
+        session: CallSession | None = None,
+    ) -> CallCost:
         usage = ProviderUsage()
         for event in events:
             if event.event_type != ConversationEventType.USAGE_METRICS:
@@ -182,19 +250,41 @@ class ConversationService:
             usage.llm_input_tokens += int(event.payload.get("llm_input_tokens", 0) or 0)
             usage.llm_output_tokens += int(event.payload.get("llm_output_tokens", 0) or 0)
 
-        stt_cost = (usage.stt_audio_seconds / 60) * self.settings.cost_stt_per_minute
-        tts_cost = (usage.tts_characters / 1000) * self.settings.cost_tts_per_1k_chars
+        duration_sec = self._call_duration_seconds(session)
+        estimate_parts: list[str] = []
+
+        stt_sec = usage.stt_audio_seconds
+        if stt_sec <= 0 and self.settings.cost_fallback_use_call_duration and duration_sec:
+            stt_sec = duration_sec * self.settings.cost_fallback_stt_ratio_of_call_duration
+            estimate_parts.append("STT estimated from call duration")
+
+        tts_chars = usage.tts_characters
+        if tts_chars <= 0 and self.settings.cost_fallback_use_call_duration and duration_sec:
+            tts_chars = int(duration_sec * self.settings.cost_fallback_tts_chars_per_call_second)
+            estimate_parts.append("TTS estimated from call duration")
+
+        stt_cost = (stt_sec / 60.0) * self.settings.cost_stt_per_minute
+        tts_cost = (tts_chars / 1000.0) * self.settings.cost_tts_per_1k_chars
         llm_input_cost = (usage.llm_input_tokens / 1_000_000) * self.settings.cost_llm_input_per_1m_tokens
         llm_output_cost = (usage.llm_output_tokens / 1_000_000) * self.settings.cost_llm_output_per_1m_tokens
-        total_cost = stt_cost + tts_cost + llm_input_cost + llm_output_cost
+        llm_total_cost = llm_input_cost + llm_output_cost
+        total_cost = stt_cost + tts_cost + llm_total_cost
+
+        estimate_note = "; ".join(estimate_parts) if estimate_parts else None
+
         return CallCost(
             session_id=session_id,
             usage=usage,
+            call_duration_seconds=duration_sec,
+            stt_seconds_charged=round(stt_sec, 6),
+            tts_characters_charged=tts_chars,
             stt_cost=round(stt_cost, 6),
             tts_cost=round(tts_cost, 6),
             llm_input_cost=round(llm_input_cost, 6),
             llm_output_cost=round(llm_output_cost, 6),
+            llm_total_cost=round(llm_total_cost, 6),
             total_cost=round(total_cost, 6),
+            estimate_note=estimate_note,
         )
 
     def extract_fields(
@@ -209,8 +299,6 @@ class ConversationService:
             latest_appointment = appointments[-1]
             extracted.name = latest_appointment.patient_name
             extracted.phone_number = latest_appointment.phone_number
-            extracted.date = latest_appointment.appointment_date.isoformat()
-            extracted.time = latest_appointment.appointment_time.isoformat()
 
         for event in events:
             payload = event.payload
@@ -248,17 +336,37 @@ class ConversationService:
 
         patient_name = appointment.get("patient_name")
         phone_number = appointment.get("phone_number")
-        appointment_date = appointment.get("appointment_date")
-        appointment_time = appointment.get("appointment_time")
 
         if isinstance(patient_name, str):
             extracted.name = patient_name
         if isinstance(phone_number, str):
             extracted.phone_number = phone_number
-        if isinstance(appointment_date, str):
-            extracted.date = appointment_date
-        if isinstance(appointment_time, str):
-            extracted.time = appointment_time
+
+    @staticmethod
+    def _call_instant_utc(session: CallSession) -> datetime:
+        raw = session.ended_at or session.started_at
+        if raw is None:
+            return datetime.now(UTC)
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=UTC)
+        return raw.astimezone(UTC)
+
+    @classmethod
+    def _overlay_call_datetime_ist(
+        cls,
+        session: CallSession,
+        extracted: ExtractedConversationFields,
+        *,
+        include_generated_iso: bool,
+    ) -> ExtractedConversationFields:
+        dt_ist = cls._call_instant_utc(session).astimezone(ZoneInfo("Asia/Kolkata"))
+        updates: dict[str, str | None] = {
+            "date": dt_ist.strftime("%Y-%m-%d"),
+            "time": dt_ist.strftime("%H:%M:%S"),
+        }
+        if include_generated_iso:
+            updates["generated_at_ist"] = dt_ist.isoformat()
+        return extracted.model_copy(update=updates)
 
     @staticmethod
     def _merge_extracted_fields(
@@ -268,9 +376,10 @@ class ConversationService:
         return ExtractedConversationFields(
             name=ai_fields.name or fallback.name,
             phone_number=ai_fields.phone_number or fallback.phone_number,
-            date=ai_fields.date or fallback.date,
-            time=ai_fields.time or fallback.time,
+            date=fallback.date,
+            time=fallback.time,
             intent=ai_fields.intent or fallback.intent,
+            generated_at_ist=fallback.generated_at_ist,
         )
 
     @staticmethod

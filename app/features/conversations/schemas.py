@@ -88,20 +88,28 @@ class ProviderUsage(BaseModel):
 class CallCost(BaseModel):
     session_id: UUID
     usage: ProviderUsage
+    call_duration_seconds: float | None = None
+    stt_seconds_charged: float = 0.0
+    tts_characters_charged: int = 0
     stt_cost: float
     tts_cost: float
     llm_input_cost: float
     llm_output_cost: float
+    llm_total_cost: float = 0.0
     total_cost: float
     currency: str = "USD"
+    estimate_note: str | None = None
 
 
 class ExtractedConversationFields(BaseModel):
     name: str | None = None
     phone_number: str | None = None
+    # Call wall time in IST (ended_at, else started_at, else now) — not appointment slot.
     date: str | None = None
     time: str | None = None
     intent: str | None = None
+    # Same instant as date/time, ISO string in Asia/Kolkata (analytics only).
+    generated_at_ist: str | None = None
 
 
 class CallAnalytics(BaseModel):
@@ -117,8 +125,14 @@ class CallHistoryItem(BaseModel):
     tool_call_count: int
     appointment_count: int
     total_cost: float
+    cost: CallCost
     extracted_fields: ExtractedConversationFields
 
 
 class CallHistoryResponse(BaseModel):
     calls: list[CallHistoryItem]
+    page: int = 1
+    page_size: int = 25
+    total_calls: int = 0
+    total_cost_usd: float = 0.0
+    has_next: bool = False
