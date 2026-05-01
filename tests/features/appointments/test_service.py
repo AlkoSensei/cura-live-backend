@@ -85,3 +85,79 @@ async def test_retrieve_cancel_and_modify(service: AppointmentService) -> None:
         AppointmentCancel(appointment_id=appointment.id, phone_number="9876543210")
     )
     assert cancelled.status == AppointmentStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_list_appointment_history_pagination_and_search(service: AppointmentService) -> None:
+    await service.book_appointment(
+        AppointmentCreate(
+            patient_name="Alpha Patient",
+            phone_number="9876543210",
+            appointment_date=date(2026, 5, 5),
+            appointment_time=time(10, 0),
+        )
+    )
+    await service.book_appointment(
+        AppointmentCreate(
+            patient_name="Beta Patient",
+            phone_number="9876543210",
+            appointment_date=date(2026, 5, 7),
+            appointment_time=time(15, 0),
+        )
+    )
+    await service.book_appointment(
+        AppointmentCreate(
+            patient_name="Gamma Guest",
+            phone_number="2222222222",
+            appointment_date=date(2026, 5, 7),
+            appointment_time=time(16, 30),
+        )
+    )
+
+    page1 = await service.list_appointments_history(
+        page=1,
+        page_size=1,
+        search=None,
+        status=None,
+    )
+    assert page1.total == 3
+    assert page1.page == 1
+    assert page1.page_size == 1
+    assert len(page1.items) == 1
+    assert page1.items[0].patient_name == "Gamma Guest"
+
+    beta_only = await service.list_appointments_history(
+        page=1,
+        page_size=20,
+        search="Beta",
+        status=None,
+    )
+    assert beta_only.total == 1
+    assert beta_only.items[0].patient_name == "Beta Patient"
+
+    by_phone_digits = await service.list_appointments_history(
+        page=1,
+        page_size=20,
+        search="2222",
+        status=None,
+    )
+    assert by_phone_digits.total == 1
+    assert by_phone_digits.items[0].phone_number == "2222222222"
+
+    booked_only = await service.list_appointments_history(
+        page=1,
+        page_size=20,
+        search=None,
+        status=AppointmentStatus.BOOKED,
+    )
+    assert booked_only.total == 3
+
+    await service.cancel_appointment(AppointmentCancel(appointment_id=page1.items[0].id, phone_number="2222222222"))
+
+    cancelled_filter = await service.list_appointments_history(
+        page=1,
+        page_size=20,
+        search=None,
+        status=AppointmentStatus.CANCELLED,
+    )
+    assert cancelled_filter.total == 1

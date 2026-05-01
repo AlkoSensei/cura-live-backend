@@ -16,6 +16,15 @@ class AppointmentRepository(Protocol):
 
     async def list_by_phone(self, phone_number: str) -> list[Appointment]: ...
 
+    async def list_paginated(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None,
+        status: AppointmentStatus | None,
+    ) -> tuple[list[Appointment], int]: ...
+
     async def cancel(self, appointment_id: UUID) -> Appointment: ...
 
     async def modify(self, payload: AppointmentModify) -> Appointment: ...
@@ -70,6 +79,31 @@ class SupabaseAppointmentRepository:
             .execute()
         )
         return [Appointment.model_validate(row) for row in response.data]
+
+    async def list_paginated(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None,
+        status: AppointmentStatus | None,
+    ) -> tuple[list[Appointment], int]:
+        offset = max(page - 1, 0) * page_size
+        query = self.client.table(self.table_name).select("*", count="exact")
+        if status is not None:
+            query = query.eq("status", status.value)
+        trimmed = search.strip() if search else ""
+        # LIKE metacharacters stripped; search matches patient name or phone substring.
+        safe = trimmed.replace("%", "").replace("_", "").replace(",", "").strip()
+        if safe:
+            pattern = f"%{safe}%"
+            query = query.or_(f"patient_name.ilike.{pattern},phone_number.ilike.{pattern}")
+        query = query.order("appointment_date", desc=True).order("appointment_time", desc=True)
+        query = query.range(offset, offset + page_size - 1)
+        response = await query.execute()
+        rows = [Appointment.model_validate(row) for row in response.data]
+        total = int(response.count) if response.count is not None else len(rows)
+        return rows, total
 
     async def cancel(self, appointment_id: UUID) -> Appointment:
         response = await (
@@ -132,6 +166,31 @@ class InMemoryAppointmentRepository:
             [appointment for appointment in self.appointments.values() if appointment.phone_number == phone_number],
             key=lambda appointment: (appointment.appointment_date, appointment.appointment_time),
         )
+
+    async def list_paginated(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None,
+        status: AppointmentStatus | None,
+    ) -> tuple[list[Appointment], int]:
+        rows = list(self.appointments.values())
+        if status is not None:
+            rows = [appointment for appointment in rows if appointment.status == status]
+        trimmed = search.strip() if search else ""
+        if trimmed:
+            q = trimmed.lower()
+            rows = [
+                appointment
+                for appointment in rows
+                if q in appointment.patient_name.lower() or q in appointment.phone_number.lower()
+            ]
+        rows.sort(key=lambda appointment: (appointment.appointment_date, appointment.appointment_time), reverse=True)
+        total = len(rows)
+        offset = max(page - 1, 0) * page_size
+        page_rows = rows[offset : offset + page_size]
+        return page_rows, total
 
     async def cancel(self, appointment_id: UUID) -> Appointment:
         appointment = self.appointments[appointment_id].model_copy(update={"status": AppointmentStatus.CANCELLED})

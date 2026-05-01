@@ -50,11 +50,17 @@ class LiveKitService:
                 payload={"message": "Agent dispatch created", "agent_name": self.settings.livekit_agent_name},
             )
         )
+        avatar_enabled = self.settings.livekit_avatar_bey_enabled
         return CreateLiveKitSessionResponse(
             session=session,
             room_name=room_name,
             livekit_url=self.settings.livekit_url,
             token=token,
+            avatar_enabled=avatar_enabled,
+            avatar_provider="bey" if avatar_enabled else None,
+            avatar_participant_identity=(
+                self.settings.livekit_avatar_participant_identity if avatar_enabled else None
+            ),
         )
 
     async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> EndLiveKitSessionResponse:

@@ -8,6 +8,7 @@ livekit-plugins-sarvam
 livekit-plugins-anthropic
 livekit-plugins-deepgram
 livekit-plugins-openai
+livekit-plugins-bey
 httpx
 pytest
 pytest-asyncio

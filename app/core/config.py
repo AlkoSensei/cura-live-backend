@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     livekit_api_secret: str = ""
     livekit_agent_name: str = "kare-appointment-agent"
     livekit_max_call_seconds: int = 300
+    # Virtual avatar (Beyond Presence). Set LIVEKIT_AVATAR_PROVIDER=bey and BEY_API_KEY to enable.
+    livekit_avatar_provider: str = "none"
+    livekit_avatar_participant_identity: str = "kare-avatar-agent"
+    livekit_avatar_participant_name: str = "Kare Avatar"
+
+    bey_api_key: str = ""
+    bey_avatar_id: str = ""
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""
@@ -50,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def livekit_configured(self) -> bool:
         return bool(self.livekit_url and self.livekit_api_key and self.livekit_api_secret)
+
+    @property
+    def livekit_avatar_bey_enabled(self) -> bool:
+        return self.livekit_avatar_provider.strip().lower() == "bey" and bool(self.bey_api_key.strip())
 
     @property
     def supabase_configured(self) -> bool:

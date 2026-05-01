@@ -6,7 +6,7 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 from livekit import api
-from livekit.agents import AgentServer, AgentSession, JobContext, MetricsCollectedEvent, cli
+from livekit.agents import AgentServer, AgentSession, JobContext, MetricsCollectedEvent, RoomOutputOptions, cli
 from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import anthropic, deepgram, openai, sarvam
 
@@ -109,6 +109,10 @@ async def entrypoint(ctx: JobContext) -> None:
         appointment_repository=SupabaseAppointmentRepository(client),
     )
     session_id = _parse_session_id(ctx)
+
+    avatar_provider = settings.livekit_avatar_provider.strip().lower()
+    if avatar_provider == "bey" and not settings.bey_api_key.strip():
+        raise RuntimeError("LIVEKIT_AVATAR_PROVIDER=bey requires BEY_API_KEY.")
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -221,14 +225,32 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
 
-    await session.start(
-        agent=AppointmentAgent(
+    avatar_enabled = settings.livekit_avatar_bey_enabled
+    if avatar_enabled:
+        from livekit.plugins import bey
+
+        bey_kwargs: dict[str, object] = {
+            "api_key": settings.bey_api_key,
+            "avatar_participant_identity": settings.livekit_avatar_participant_identity,
+            "avatar_participant_name": settings.livekit_avatar_participant_name,
+        }
+        if settings.bey_avatar_id.strip():
+            bey_kwargs["avatar_id"] = settings.bey_avatar_id.strip()
+        bey_avatar = bey.AvatarSession(**bey_kwargs)
+        await bey_avatar.start(session, room=ctx.room)
+
+    start_kwargs: dict[str, object] = {
+        "agent": AppointmentAgent(
             appointment_service=appointment_service,
             conversation_service=conversation_service,
             session_id=session_id,
         ),
-        room=ctx.room,
-    )
+        "room": ctx.room,
+    }
+    if avatar_enabled:
+        start_kwargs["room_output_options"] = RoomOutputOptions(audio_enabled=False)
+
+    await session.start(**start_kwargs)
     await session.generate_reply(instructions="Greet the user and ask for their phone number to identify them.")
 
     async def enforce_max_call_duration() -> None:

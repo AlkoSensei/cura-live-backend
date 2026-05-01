@@ -66,6 +66,15 @@ class AppointmentList(BaseModel):
     appointments: list[Appointment]
 
 
+class PaginatedAppointments(BaseModel):
+    """Paged list for appointment history UI."""
+
+    items: list[Appointment]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+
+
 class ToolResult(BaseModel):
     success: bool
     message: str

@@ -13,6 +13,7 @@ from app.features.appointments.schemas import (
     AppointmentModify,
     AppointmentSlot,
     AppointmentStatus,
+    PaginatedAppointments,
     ToolResult,
     UserIdentity,
 )
@@ -92,6 +93,23 @@ class AppointmentService:
 
     async def retrieve_appointments(self, phone_number: str) -> list[Appointment]:
         return await self.repository.list_by_phone(normalize_phone_number(phone_number))
+
+    async def list_appointments_history(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None,
+        status: AppointmentStatus | None,
+    ) -> PaginatedAppointments:
+        """Paged appointments for all patients. Newest slot first. Search matches patient name or phone substring."""
+        items, total = await self.repository.list_paginated(
+            page=page,
+            page_size=page_size,
+            search=search,
+            status=status,
+        )
+        return PaginatedAppointments(items=items, total=total, page=page, page_size=page_size)
 
     async def cancel_appointment(self, payload: AppointmentCancel) -> Appointment:
         appointment = await self._get_owned_appointment(payload.appointment_id, payload.phone_number)

@@ -16,6 +16,9 @@ class CreateLiveKitSessionResponse(BaseModel):
     room_name: str
     livekit_url: str
     token: str
+    avatar_enabled: bool = False
+    avatar_provider: str | None = None
+    avatar_participant_identity: str | None = None
 
 
 class EndLiveKitSessionRequest(BaseModel):
