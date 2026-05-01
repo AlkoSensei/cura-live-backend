@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+supabase
+livekit-api
+livekit-agents
+livekit-plugins-sarvam
+livekit-plugins-anthropic
+livekit-plugins-deepgram
+livekit-plugins-openai
+httpx
+pytest
+pytest-asyncio

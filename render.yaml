@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: kare-live-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free          # change to starter ($7/mo) for always-on
+    healthCheckPath: /health
+
+    envVars:
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: LIVEKIT_AGENT_NAME
+        value: appointment-agent
+      - key: LIVEKIT_MAX_CALL_SECONDS
+        value: "300"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: DEEPGRAM_MODEL
+        value: nova-3
+      - key: DEEPGRAM_LANGUAGE
+        value: en-IN
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: SARVAM_LANGUAGE_CODE
+        value: en-IN
+      - key: SARVAM_TTS_MODEL
+        value: bulbul:v3
+      - key: SARVAM_SPEAKER
+        value: shubh
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_MODEL
+        value: google/gemini-3-flash
+      - key: POST_CALL_AI_EXTRACTION_ENABLED
+        value: "true"
+      - key: CORS_ORIGINS
+        value: "*"
