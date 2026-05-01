@@ -1,8 +1,12 @@
 from datetime import date, datetime, time
 from enum import StrEnum
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Stored and API responses always use this for `Appointment.notes` (ignore DB junk for reads).
+APPOINTMENT_NOTES_PLACEHOLDER = "NA"
 
 
 class AppointmentStatus(StrEnum):
@@ -60,6 +64,11 @@ class Appointment(BaseModel):
     notes: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _notes_always_placeholder(self) -> Self:
+        self.notes = APPOINTMENT_NOTES_PLACEHOLDER
+        return self
 
 
 class AppointmentList(BaseModel):

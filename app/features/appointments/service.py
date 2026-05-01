@@ -7,6 +7,7 @@ from fastapi import status
 from app.core.errors import AppError
 from app.features.appointments.repository import AppointmentRepository
 from app.features.appointments.schemas import (
+    APPOINTMENT_NOTES_PLACEHOLDER,
     Appointment,
     AppointmentCancel,
     AppointmentCreate,
@@ -86,7 +87,12 @@ class AppointmentService:
         return available_slots
 
     async def book_appointment(self, payload: AppointmentCreate) -> Appointment:
-        normalized_payload = payload.model_copy(update={"phone_number": normalize_phone_number(payload.phone_number)})
+        normalized_payload = payload.model_copy(
+            update={
+                "phone_number": normalize_phone_number(payload.phone_number),
+                "notes": APPOINTMENT_NOTES_PLACEHOLDER,
+            }
+        )
         self._ensure_bookable_slot(normalized_payload.appointment_date, normalized_payload.appointment_time)
         await self._ensure_slot_is_available(normalized_payload.appointment_date, normalized_payload.appointment_time)
         return await self.repository.create(normalized_payload)
@@ -125,7 +131,9 @@ class AppointmentService:
         existing = await self.repository.get_active_by_slot(payload.new_date, payload.new_time)
         if existing is not None and existing.id != payload.appointment_id:
             raise AppError("That slot is already booked. Please choose another available slot.")
-        return await self.repository.modify(payload)
+        return await self.repository.modify(
+            payload.model_copy(update={"notes": APPOINTMENT_NOTES_PLACEHOLDER})
+        )
 
     async def end_conversation(self) -> ToolResult:
         return ToolResult(success=True, message="Thanks for calling. The conversation has ended.")
