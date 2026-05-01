@@ -47,9 +47,10 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-3-flash"
     post_call_ai_extraction_enabled: bool = True
 
-    # Deployment: when true, start the LiveKit worker inside the FastAPI process (simple local dev).
-    # On Render/Fly web: set START_EMBEDDED_LIVEKIT_WORKER=false and run `python -m app.agent.run_worker start` separately.
-    start_embedded_livekit_worker: bool = True
+    # Deployment: when true, start the LiveKit worker inside the FastAPI process (local dev).
+    # Default false so split deploy (Render/Fly worker + API) does not show bogus /api/warmup "worker":"warming".
+    # Local: set START_EMBEDDED_LIVEKIT_WORKER=true in .env (see .env.example).
+    start_embedded_livekit_worker: bool = False
 
     cost_stt_per_minute: float = 0.0
     cost_tts_per_1k_chars: float = 0.0
