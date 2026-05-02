@@ -13,7 +13,10 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.features.appointments.repository import AppointmentRepository
 from app.features.appointments.schemas import Appointment
-from app.features.conversations.ai_extraction import PostCallExtraction, PostCallExtractionService
+from app.features.conversations.ai_extraction import (
+    PostCallExtraction,
+    PostCallExtractionService,
+)
 from app.features.conversations.event_bus import ConversationEventBus, event_bus
 from app.features.conversations.repository import ConversationRepository
 from app.features.conversations.schemas import (
@@ -63,7 +66,10 @@ class ConversationService:
             ConversationEventCreate(
                 session_id=session.id,
                 event_type=ConversationEventType.TOOL_COMPLETED,
-                payload={"message": "LiveKit room created", "room_name": session.room_name},
+                payload={
+                    "message": "LiveKit room created",
+                    "room_name": session.room_name,
+                },
             )
         )
         return session
@@ -74,7 +80,9 @@ class ConversationService:
             raise AppError("Call session not found.", status.HTTP_404_NOT_FOUND)
         return session
 
-    async def end_session(self, session_id: UUID, summary: dict[str, object] | None = None) -> CallSession:
+    async def end_session(
+        self, session_id: UUID, summary: dict[str, object] | None = None
+    ) -> CallSession:
         events = await self.repository.list_events(session_id)
         final_summary: dict[str, object] = dict(summary or {})
         if (
@@ -87,7 +95,9 @@ class ConversationService:
                 final_summary["ai_outcome"] = ai.outcome
                 final_summary["ai_next_action"] = ai.next_action
                 final_summary["ai_provider"] = "anthropic_with_openrouter_fallback"
-                final_summary["ai_extracted_fields"] = ai.extracted_fields.model_dump(mode="json")
+                final_summary["ai_extracted_fields"] = ai.extracted_fields.model_dump(
+                    mode="json"
+                )
 
         session = await self.repository.end_session(session_id, final_summary)
         await self.add_event(
@@ -104,7 +114,9 @@ class ConversationService:
         await self.bus.publish(event)
         return event
 
-    async def update_phone_number(self, session_id: UUID, phone_number: str) -> CallSession:
+    async def update_phone_number(
+        self, session_id: UUID, phone_number: str
+    ) -> CallSession:
         return await self.repository.update_phone_number(session_id, phone_number)
 
     async def stream_events(self, session_id: UUID) -> AsyncIterator[str]:
@@ -121,7 +133,9 @@ class ConversationService:
                     last_event_id = event.id
                     yield self._format_sse(event)
                 except TimeoutError:
-                    for event in await self.repository.list_events(session_id, last_event_id):
+                    for event in await self.repository.list_events(
+                        session_id, last_event_id
+                    ):
                         last_event_id = event.id
                         yield self._format_sse(event)
                     yield ": keep-alive\n\n"
@@ -132,29 +146,51 @@ class ConversationService:
         session = await self.get_session(session_id)
         events = await self.repository.list_events(session_id)
         phone_number = session.phone_number
-        appointments = await self.appointment_repository.list_by_phone(phone_number) if phone_number else []
+        appointments = (
+            await self.appointment_repository.list_by_phone(phone_number)
+            if phone_number
+            else []
+        )
         extracted_fields = self.extract_fields(session, events, appointments)
 
         summ = session.summary or {}
         cached_summary_text = summ.get("ai_summary")
-        has_cached_ai = isinstance(cached_summary_text, str) and bool(cached_summary_text.strip())
+        has_cached_ai = isinstance(cached_summary_text, str) and bool(
+            cached_summary_text.strip()
+        )
 
         if has_cached_ai:
             try:
-                cached_extracted = ExtractedConversationFields.model_validate(summ.get("ai_extracted_fields") or {})
+                cached_extracted = ExtractedConversationFields.model_validate(
+                    summ.get("ai_extracted_fields") or {}
+                )
             except ValidationError:
                 cached_extracted = ExtractedConversationFields()
             ai_extraction = PostCallExtraction(
                 extracted_fields=cached_extracted,
-                summary=cached_summary_text if isinstance(cached_summary_text, str) else None,
-                outcome=summ.get("ai_outcome") if isinstance(summ.get("ai_outcome"), str) else None,
-                next_action=summ.get("ai_next_action") if isinstance(summ.get("ai_next_action"), str) else None,
+                summary=(
+                    cached_summary_text
+                    if isinstance(cached_summary_text, str)
+                    else None
+                ),
+                outcome=(
+                    summ.get("ai_outcome")
+                    if isinstance(summ.get("ai_outcome"), str)
+                    else None
+                ),
+                next_action=(
+                    summ.get("ai_next_action")
+                    if isinstance(summ.get("ai_next_action"), str)
+                    else None
+                ),
             )
         else:
             ai_extraction = await self.ai_extraction_service.extract(events)
 
         if ai_extraction is not None:
-            extracted_fields = self._merge_extracted_fields(extracted_fields, ai_extraction.extracted_fields)
+            extracted_fields = self._merge_extracted_fields(
+                extracted_fields, ai_extraction.extracted_fields
+            )
             session = session.model_copy(
                 update={
                     "summary": {
@@ -166,7 +202,9 @@ class ConversationService:
                     }
                 }
             )
-        extracted_fields = self._overlay_call_datetime_ist(session, extracted_fields, include_generated_iso=True)
+        extracted_fields = self._overlay_call_datetime_ist(
+            session, extracted_fields, include_generated_iso=True
+        )
 
         return CallAnalytics(
             session=session,
@@ -187,7 +225,9 @@ class ConversationService:
         offset = (page - 1) * page_size
 
         total_calls = await self.repository.count_sessions(phone_number)
-        sessions_page = await self.repository.list_sessions_page(phone_number, offset, page_size)
+        sessions_page = await self.repository.list_sessions_page(
+            phone_number, offset, page_size
+        )
 
         ids_all = await self.repository.list_session_ids_ordered(phone_number)
         sessions_by_id = await self.repository.list_sessions_by_ids(ids_all)
@@ -211,7 +251,9 @@ class ConversationService:
             tool_call_count = self.count_agent_tool_calls(events)
             appointments: list[Appointment] = []
             if session.phone_number:
-                appointments = await self.appointment_repository.list_by_phone(session.phone_number)
+                appointments = await self.appointment_repository.list_by_phone(
+                    session.phone_number
+                )
             cost = cost_by_session[session.id]
             raw_extracted = self.extract_fields(session, events, appointments)
             calls.append(
@@ -242,7 +284,11 @@ class ConversationService:
         return sum(
             1
             for event in events
-            if event.event_type in {ConversationEventType.TOOL_COMPLETED, ConversationEventType.APPOINTMENT_BOOKED}
+            if event.event_type
+            in {
+                ConversationEventType.TOOL_COMPLETED,
+                ConversationEventType.APPOINTMENT_BOOKED,
+            }
             and event.payload.get("tool_name") in self.agent_tool_names
         )
 
@@ -278,28 +324,48 @@ class ConversationService:
             if event.event_type != ConversationEventType.USAGE_METRICS:
                 continue
             usage.raw_metrics.append(event.payload)
-            usage.stt_audio_seconds += float(event.payload.get("stt_audio_seconds", 0.0) or 0.0)
+            usage.stt_audio_seconds += float(
+                event.payload.get("stt_audio_seconds", 0.0) or 0.0
+            )
             usage.tts_characters += int(event.payload.get("tts_characters", 0) or 0)
             usage.llm_input_tokens += int(event.payload.get("llm_input_tokens", 0) or 0)
-            usage.llm_output_tokens += int(event.payload.get("llm_output_tokens", 0) or 0)
+            usage.llm_output_tokens += int(
+                event.payload.get("llm_output_tokens", 0) or 0
+            )
 
         duration_sec = self._call_duration_seconds(session)
         estimate_parts: list[str] = []
 
         stt_sec = usage.stt_audio_seconds
-        if stt_sec <= 0 and self.settings.cost_fallback_use_call_duration and duration_sec:
-            stt_sec = duration_sec * self.settings.cost_fallback_stt_ratio_of_call_duration
+        if (
+            stt_sec <= 0
+            and self.settings.cost_fallback_use_call_duration
+            and duration_sec
+        ):
+            stt_sec = (
+                duration_sec * self.settings.cost_fallback_stt_ratio_of_call_duration
+            )
             estimate_parts.append("STT estimated from call duration")
 
         tts_chars = usage.tts_characters
-        if tts_chars <= 0 and self.settings.cost_fallback_use_call_duration and duration_sec:
-            tts_chars = int(duration_sec * self.settings.cost_fallback_tts_chars_per_call_second)
+        if (
+            tts_chars <= 0
+            and self.settings.cost_fallback_use_call_duration
+            and duration_sec
+        ):
+            tts_chars = int(
+                duration_sec * self.settings.cost_fallback_tts_chars_per_call_second
+            )
             estimate_parts.append("TTS estimated from call duration")
 
         stt_cost = (stt_sec / 60.0) * self.settings.cost_stt_per_minute
         tts_cost = (tts_chars / 1000.0) * self.settings.cost_tts_per_1k_chars
-        llm_input_cost = (usage.llm_input_tokens / 1_000_000) * self.settings.cost_llm_input_per_1m_tokens
-        llm_output_cost = (usage.llm_output_tokens / 1_000_000) * self.settings.cost_llm_output_per_1m_tokens
+        llm_input_cost = (
+            usage.llm_input_tokens / 1_000_000
+        ) * self.settings.cost_llm_input_per_1m_tokens
+        llm_output_cost = (
+            usage.llm_output_tokens / 1_000_000
+        ) * self.settings.cost_llm_output_per_1m_tokens
         llm_total_cost = llm_input_cost + llm_output_cost
         total_cost = stt_cost + tts_cost + llm_total_cost
 
@@ -353,13 +419,19 @@ class ConversationService:
                         extracted.phone_number = phone_number
                 continue
 
-            if tool_name in {"book_appointment", "cancel_appointment", "modify_appointment"}:
+            if tool_name in {
+                "book_appointment",
+                "cancel_appointment",
+                "modify_appointment",
+            }:
                 self._merge_appointment_payload(extracted, payload)
 
         return extracted
 
     @staticmethod
-    def _merge_appointment_payload(extracted: ExtractedConversationFields, payload: dict[str, object]) -> None:
+    def _merge_appointment_payload(
+        extracted: ExtractedConversationFields, payload: dict[str, object]
+    ) -> None:
         data = payload.get("data")
         if not isinstance(data, dict):
             return
@@ -407,7 +479,7 @@ class ConversationService:
         ai_fields: ExtractedConversationFields,
     ) -> ExtractedConversationFields:
         return ExtractedConversationFields(
-            name=ai_fields.name or fallback.name,
+            name=ai_fields.name or "Not Recorded",
             phone_number=ai_fields.phone_number or fallback.phone_number,
             date=fallback.date,
             time=fallback.time,

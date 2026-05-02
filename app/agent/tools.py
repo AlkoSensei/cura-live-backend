@@ -5,9 +5,16 @@ from uuid import UUID
 from livekit.agents import Agent, function_tool
 from livekit.agents.voice import RunContext
 
-from app.features.appointments.schemas import AppointmentCancel, AppointmentCreate, AppointmentModify
+from app.features.appointments.schemas import (
+    AppointmentCancel,
+    AppointmentCreate,
+    AppointmentModify,
+)
 from app.features.appointments.service import AppointmentService
-from app.features.conversations.schemas import ConversationEventCreate, ConversationEventType
+from app.features.conversations.schemas import (
+    ConversationEventCreate,
+    ConversationEventType,
+)
 from app.features.conversations.service import ConversationService
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "appointment_agent.md"
@@ -40,13 +47,16 @@ class AppointmentAgent(Agent):
             ConversationEventCreate(
                 session_id=self.session_id,
                 event_type=event_type,
-                payload={"tool_name": tool_name, "message": message, "data": data or {}},
+                payload={
+                    "tool_name": tool_name,
+                    "message": message,
+                    "data": data or {},
+                },
             )
         )
 
     async def _end_call(self, reason: str, ctx: RunContext | None = None) -> str:
-        if ctx is not None:
-            await ctx.wait_for_playout()
+        await ctx.wait_for_playout()
         result = await self.appointment_service.end_conversation()
         await self._emit_tool_event(
             ConversationEventType.TOOL_COMPLETED,
@@ -74,9 +84,13 @@ class AppointmentAgent(Agent):
     @function_tool
     async def identify_user(self, phone_number: str) -> str:
         """Identify the caller using their phone number as the unique ID."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "identify_user", "Identifying user")
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED, "identify_user", "Identifying user"
+        )
         identity = self.appointment_service.identify_user(phone_number)
-        await self.conversation_service.update_phone_number(self.session_id, identity.phone_number)
+        await self.conversation_service.update_phone_number(
+            self.session_id, identity.phone_number
+        )
         await self._emit_tool_event(
             ConversationEventType.TOOL_COMPLETED,
             "identify_user",
@@ -88,10 +102,19 @@ class AppointmentAgent(Agent):
     @function_tool
     async def fetch_slots(self) -> str:
         """Fetch available appointment slots."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "fetch_slots", "Fetching available slots")
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED,
+            "fetch_slots",
+            "Fetching available slots",
+        )
         slots = await self.appointment_service.fetch_slots()
         data = {"slots": [slot.model_dump(mode="json") for slot in slots]}
-        await self._emit_tool_event(ConversationEventType.TOOL_COMPLETED, "fetch_slots", "Available slots fetched", data)
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_COMPLETED,
+            "fetch_slots",
+            "Available slots fetched",
+            data,
+        )
         labels = ", ".join(slot.label for slot in slots)
         return f"Available slots are: {labels}."
 
@@ -105,7 +128,11 @@ class AppointmentAgent(Agent):
         notes: str | None = None,
     ) -> str:
         """Book an appointment after collecting name, phone number, date, and time."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "book_appointment", "Booking appointment")
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED,
+            "book_appointment",
+            "Booking appointment",
+        )
         appointment = await self.appointment_service.book_appointment(
             AppointmentCreate(
                 patient_name=patient_name,
@@ -115,7 +142,9 @@ class AppointmentAgent(Agent):
                 notes=notes,
             )
         )
-        await self.conversation_service.update_phone_number(self.session_id, appointment.phone_number)
+        await self.conversation_service.update_phone_number(
+            self.session_id, appointment.phone_number
+        )
         data = {"appointment": appointment.model_dump(mode="json")}
         await self._emit_tool_event(
             ConversationEventType.TOOL_COMPLETED,
@@ -134,10 +163,25 @@ class AppointmentAgent(Agent):
     @function_tool
     async def retrieve_appointments(self, phone_number: str) -> str:
         """Retrieve past and current appointments for a phone number."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "retrieve_appointments", "Retrieving appointments")
-        appointments = await self.appointment_service.retrieve_appointments(phone_number)
-        data = {"appointments": [appointment.model_dump(mode="json") for appointment in appointments]}
-        await self._emit_tool_event(ConversationEventType.TOOL_COMPLETED, "retrieve_appointments", "Appointments retrieved", data)
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED,
+            "retrieve_appointments",
+            "Retrieving appointments",
+        )
+        appointments = await self.appointment_service.retrieve_appointments(
+            phone_number
+        )
+        data = {
+            "appointments": [
+                appointment.model_dump(mode="json") for appointment in appointments
+            ]
+        }
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_COMPLETED,
+            "retrieve_appointments",
+            "Appointments retrieved",
+            data,
+        )
         if not appointments:
             return "I could not find any appointments for this phone number."
         return "Appointments: " + "; ".join(
@@ -148,7 +192,11 @@ class AppointmentAgent(Agent):
     @function_tool
     async def cancel_appointment(self, appointment_id: UUID, phone_number: str) -> str:
         """Cancel an existing appointment by appointment ID and phone number."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "cancel_appointment", "Cancelling appointment")
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED,
+            "cancel_appointment",
+            "Cancelling appointment",
+        )
         appointment = await self.appointment_service.cancel_appointment(
             AppointmentCancel(appointment_id=appointment_id, phone_number=phone_number)
         )
@@ -170,7 +218,11 @@ class AppointmentAgent(Agent):
         notes: str | None = None,
     ) -> str:
         """Modify an existing appointment date and time."""
-        await self._emit_tool_event(ConversationEventType.TOOL_STARTED, "modify_appointment", "Modifying appointment")
+        await self._emit_tool_event(
+            ConversationEventType.TOOL_STARTED,
+            "modify_appointment",
+            "Modifying appointment",
+        )
         appointment = await self.appointment_service.modify_appointment(
             AppointmentModify(
                 appointment_id=appointment_id,
