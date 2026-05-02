@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-3-flash"
+    openrouter_model: str = "google/gemini-3.1-flash-lite-preview"
     post_call_ai_extraction_enabled: bool = True
 
     # Deployment: when true, start the LiveKit worker inside the FastAPI process (local dev).

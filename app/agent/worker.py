@@ -6,7 +6,14 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 from livekit import api
-from livekit.agents import AgentServer, AgentSession, JobContext, MetricsCollectedEvent, RoomOutputOptions, cli
+from livekit.agents import (
+    AgentServer,
+    AgentSession,
+    JobContext,
+    MetricsCollectedEvent,
+    RoomOutputOptions,
+    cli,
+)
 from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import anthropic, deepgram, openai, sarvam
 
@@ -16,7 +23,11 @@ from app.db.supabase import close_supabase, get_supabase, init_supabase
 from app.features.appointments.repository import SupabaseAppointmentRepository
 from app.features.appointments.service import AppointmentService
 from app.features.conversations.repository import SupabaseConversationRepository
-from app.features.conversations.schemas import ConversationEventCreate, ConversationEventType, TranscriptRole
+from app.features.conversations.schemas import (
+    ConversationEventCreate,
+    ConversationEventType,
+    TranscriptRole,
+)
 from app.features.conversations.service import ConversationService
 
 load_dotenv()
@@ -59,7 +70,9 @@ def _metrics_payload(ev: MetricsCollectedEvent) -> dict[str, object]:
         getattr(metrics, "prompt_tokens", 0) or getattr(metrics, "input_tokens", 0) or 0
     )
     payload["llm_output_tokens"] = int(
-        getattr(metrics, "completion_tokens", 0) or getattr(metrics, "output_tokens", 0) or 0
+        getattr(metrics, "completion_tokens", 0)
+        or getattr(metrics, "output_tokens", 0)
+        or 0
     )
     payload["tts_characters"] = int(getattr(metrics, "characters_count", 0) or 0)
     payload["stt_audio_seconds"] = float(
@@ -72,7 +85,9 @@ def _metrics_payload(ev: MetricsCollectedEvent) -> dict[str, object]:
 
 
 async def _delete_room(room_name: str) -> None:
-    lkapi = api.LiveKitAPI(settings.livekit_url, settings.livekit_api_key, settings.livekit_api_secret)
+    lkapi = api.LiveKitAPI(
+        settings.livekit_url, settings.livekit_api_key, settings.livekit_api_secret
+    )
     try:
         await lkapi.room.delete_room(api.DeleteRoomRequest(room=room_name))
     except Exception:
@@ -83,22 +98,24 @@ async def _delete_room(room_name: str) -> None:
 
 def _create_llm() -> FallbackAdapter:
     llms = [
-        anthropic.LLM(model=settings.claude_model, api_key=settings.anthropic_api_key, temperature=0.2),
+        anthropic.LLM(
+            model=settings.claude_model,
+            api_key=settings.anthropic_api_key,
+            temperature=0.2,
+        ),
     ]
     if settings.openrouter_api_key:
         llms.append(
-            openai.LLM(
+            openai.LLM.with_openrouter(
                 model=settings.openrouter_model,
                 api_key=settings.openrouter_api_key,
                 base_url=settings.openrouter_base_url,
                 temperature=0.2,
-                extra_headers={
-                    "HTTP-Referer": "http://localhost:8000",
-                    "X-Title": settings.app_name,
-                },
             )
         )
-    return FallbackAdapter(llm=llms, attempt_timeout=8.0, max_retry_per_llm=1, retry_interval=0.5)
+    return FallbackAdapter(
+        llm=llms, attempt_timeout=8.0, max_retry_per_llm=1, retry_interval=0.5
+    )
 
 
 @server.rtc_session(agent_name=settings.livekit_agent_name)
@@ -112,7 +129,11 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     meta = _parse_dispatch_metadata(ctx)
     session_id = UUID(str(meta["session_id"]))
-    prov = str(meta.get("avatar_provider") or settings.livekit_avatar_provider_normalized).strip().lower()
+    prov = (
+        str(meta.get("avatar_provider") or settings.livekit_avatar_provider_normalized)
+        .strip()
+        .lower()
+    )
 
     if prov == "bey" and not settings.bey_api_key.strip():
         raise RuntimeError("Avatar provider bey requires BEY_API_KEY.")
@@ -209,7 +230,9 @@ async def entrypoint(ctx: JobContext) -> None:
                     event_type=ConversationEventType.INTERRUPTION,
                     payload={
                         "is_interruption": bool(getattr(ev, "is_interruption", False)),
-                        "detection_delay": float(getattr(ev, "detection_delay", 0.0) or 0.0),
+                        "detection_delay": float(
+                            getattr(ev, "detection_delay", 0.0) or 0.0
+                        ),
                         "detected_at": float(getattr(ev, "detected_at", 0.0) or 0.0),
                         "overlap_started_at": getattr(ev, "overlap_started_at", None),
                     },
@@ -230,7 +253,11 @@ async def entrypoint(ctx: JobContext) -> None:
                 ConversationEventCreate(
                     session_id=session_id,
                     event_type=ConversationEventType.TRANSCRIPT,
-                    payload={"role": TranscriptRole.AGENT.value, "text": text, "is_final": True},
+                    payload={
+                        "role": TranscriptRole.AGENT.value,
+                        "text": text,
+                        "is_final": True,
+                    },
                 )
             )
         )
@@ -279,7 +306,9 @@ async def entrypoint(ctx: JobContext) -> None:
         start_kwargs["room_output_options"] = RoomOutputOptions(audio_enabled=False)
 
     await session.start(**start_kwargs)
-    await session.generate_reply(instructions="Greet the user and ask for their phone number to identify them.")
+    await session.generate_reply(
+        instructions="Greet the user and ask for their phone number to identify them."
+    )
 
     async def enforce_max_call_duration() -> None:
         await asyncio.sleep(settings.livekit_max_call_seconds)
@@ -299,7 +328,10 @@ async def entrypoint(ctx: JobContext) -> None:
         await asyncio.sleep(4)
         await conversation_service.end_session(
             session_id,
-            {"reason": "max_call_duration_reached", "max_call_seconds": settings.livekit_max_call_seconds},
+            {
+                "reason": "max_call_duration_reached",
+                "max_call_seconds": settings.livekit_max_call_seconds,
+            },
         )
         await session.aclose()
         await _delete_room(ctx.room.name)
